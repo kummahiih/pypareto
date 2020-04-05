@@ -11,6 +11,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 from typing import List
 from enum import Enum, auto
 import abc
+from collections import defaultdict
 
 class MaxMin(Enum):
     MAX = 1
@@ -112,16 +113,21 @@ def cmp_to_target(a, b, cmp, target: MaxMin, none_is_good) -> Domination:
     GREATER
     >>> cmp_to_target(None, None, by_value, MaxMin.MIN, False)
     EQUAL
-
+    >>> cmp_to_target(None, 1, by_none, MaxMin.MAX, False)
+    LESS
+    >>> cmp_to_target(1, None, by_none, MaxMin.MAX, False)
+    GREATER
+    >>> cmp_to_target(None, None, by_none, MaxMin.MAX, False)
+    EQUAL
 
     """
     if target is MaxMin.SKIP:
         return Domination.EQUAL
-    
-    if a is not None and b is None:
-        return Domination.GREATER if not none_is_good else Domination.LESS
     if a is None and b is not None:
         return Domination.LESS if not none_is_good else Domination.GREATER
+    if a is not None and b is None:
+        return Domination.GREATER if not none_is_good else Domination.LESS
+   
     if a is None and b is None:
         return Domination.EQUAL
 
@@ -247,6 +253,8 @@ def split_by_dimensions(values, cmp, targets: MaxMinList):
     >>> targets = MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)
     >>> split_by_dimensions(values, cmp, targets)
     [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1), (0, 1, 0), (0, 0, 1)], [(0, 0, 0)]]
+
+
     """
     if values is None or len(values) == 0:
         return []
@@ -338,14 +346,64 @@ def split_by_pareto(values, dominates):
 
 class Cmp(metaclass=abc.ABCMeta):
     @abc.abstractclassmethod
-    def compare(self, a,b) -> Domination:
+    def compare(self, a, b) -> Domination:
         raise NotImplementedError
+    
+    @abc.abstractclassmethod
+    def is_pareto(self) -> bool:
+        raise NotImplementedError
+    
+    @abc.abstractclassmethod
+    def is_group(self) -> bool:
+        raise NotImplementedError
+
+    @abc.abstractclassmethod
+    def group(self, a) -> int:
+        raise NotImplementedError
+
+class GroupNones(Cmp):
+    def __init__(self, targets: MaxMinList):
+        self._targets = targets
+    @property
+    def targets(self):
+        return self._targets
+    def compare(self, a, b) -> Domination:
+        raise NotImplementedError
+    def is_pareto(self) -> bool:
+        return False
+    def is_group(self) -> bool:
+        return True
+
+    def group(self, a) -> int:
+        """
+        GroupNones(MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).group((0,None,None))
+        -2
+        """
+        noneSum = 0
+        for d in range(self.targets.dim):
+            if self.targets.list[d] is MaxMin.SKIP:
+                continue
+            if self.targets.list[d] is MaxMin.MAX and a[d] is None:
+                noneSum += 1
+            if self.targets.list[d] is MaxMin.MIN and a[d] is None:
+                noneSum -= 1
+        return noneSum
+    
+    def and_then(self, c: Cmp) -> Cmp:
+        return ComparisonChain(self, c)
+    
+    def as_chain(self):
+        return ComparisonChain(self)
 
 
 class Comparison(Cmp):
     def __init__(self, cmp, targets: MaxMinList):
         self._cmp = cmp
         self._targets = targets
+    
+    def is_pareto(self) -> bool: return True
+    def is_group(self) -> bool: return False
+    def group(self, a) -> int: return 1
 
     @property
     def cmp(self):
@@ -364,7 +422,7 @@ class Comparison(Cmp):
     def as_chain(self):
         return ComparisonChain(self)
 
-class ComparisonChain(Cmp):
+class ComparisonChain:
     def __init__(self, *chain: List[Comparison]):
         self._chain = chain
 
@@ -374,6 +432,8 @@ class ComparisonChain(Cmp):
 
     def compare(self, a, b) -> Domination:
         for c in self.chain[:-1]:
+            if not c.is_pareto():
+                continue
             result = c.compare(a, b)
             if result == Domination.EQUAL:
                 continue
@@ -383,23 +443,44 @@ class ComparisonChain(Cmp):
     def and_then(self, c: Cmp) -> Cmp:
         return ComparisonChain(self, *self.chain, c)
 
-    def split_by_dimensions(self, values):
+    def pre_split(self, values):
         """
         Before doing the N^2 pareto splits, split the values to preliminary groups by using thi function.
 
         >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
         >>> chain = Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)).as_chain()
-        >>> chain.split_by_dimensions(values)
+        >>> chain.pre_split(values)
         [[(2, 2, 2)], [(0, 1, 1), (1, 0, 0), (0, 0, 1), (None, 1, 1), (0, 1, 0), (None, 0, 1)], [(0, 0, 0), (0, None, None)]]
+
+        >>> chain = GroupNones(MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).as_chain()
+        >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
+        >>> chain.pre_split(values)
+        [[(2, 2, 2), (0, 1, 1), (0, 0, 1), (0, 1, 0), (1, 0, 0), (0, 0, 0)], [(None, 0, 1), (None, 1, 1)], [(0, None, None)]]
+
         """
         splitted = [values]
         for comparison in self.chain:
-            new_splitted = []
-            while len(splitted) > 0:
-                group = splitted.pop()
-                new_groups = split_by_dimensions(group, comparison.cmp, comparison.targets)
-                new_splitted.extend(new_groups)
-            splitted = new_splitted
+            if comparison.is_pareto():
+                new_splitted = []
+                while len(splitted) > 0:
+                    group = splitted.pop(0)
+                    new_groups = split_by_dimensions(group, comparison.cmp, comparison.targets)
+                    new_splitted.extend(new_groups)
+                splitted = new_splitted
+            elif comparison.is_group():
+                new_splitted = []
+                while len(splitted) > 0:
+                    group = splitted.pop(0)
+                    group_dict = defaultdict(list)
+                    for a in group:
+                        group_dict[comparison.group(a)].append(a)
+                    keys = list(group_dict.keys())
+                    keys.sort()
+                    keys.reverse()
+                    new_groups = [group_dict[k] for k in keys]
+                    
+                    new_splitted.extend(new_groups)
+                splitted = new_splitted
         return splitted
     
     def split_by_pareto(self, values):
@@ -414,13 +495,13 @@ Here the None means just inferior value:
 
 Here one extra None means that the whole row is inferior:
 
-    >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
-    >>> chain =  Comparison(by_none, MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).and_then(
+    >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0), (None, 0, None)]
+    >>> chain = GroupNones(MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).and_then(
     ...    Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)))
     >>> chain.split_by_pareto(values)
-    [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (0, 0, 1)], [(None, 1, 1)], [(None, 0, 1)], [(0, 0, 0)], [(0, None, None)]]
+    [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1), (0, 1, 0), (0, 0, 1)], [(0, 0, 0)], [(None, 1, 1)], [(None, 0, 1)], [(None, 0, None), (0, None, None)]]
 """
-        splitted = self.split_by_dimensions(values)
+        splitted = self.pre_split(values)
         new_splitted = []
         while len(splitted) > 0:
             group = splitted.pop(0)

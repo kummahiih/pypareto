@@ -23,6 +23,7 @@ Pypareto is a Python library for pareto front seaching
 __all__ = [
     'Cmp',
     'Comparison',
+    'GroupNones',
     'ComparisonChain',
     'Domination',
     'MaxMin',
