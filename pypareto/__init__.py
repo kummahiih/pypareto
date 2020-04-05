@@ -7,7 +7,6 @@ from .pypareto import (
     MaxMinList,
     by_none,
     by_value,
-    by_value_and_not_none,
     cmp_to_target,
     dominates,
     find_dimension_maxmin_set,
@@ -18,8 +17,8 @@ from .pypareto import (
 __doc__ = """
 # pypareto
 Pypareto is a Python library for pareto front seaching
-## Usage 
-""" + "\n".join( [l.lstrip(" ") for l in ComparisonChain.split_by_pareto.__doc__.split("\n")])
+## Usage
+""" + ComparisonChain.split_by_pareto.__doc__
 
 __all__ = [
     'Cmp',
@@ -30,7 +29,6 @@ __all__ = [
     'MaxMinList',
     'by_none',
     'by_value',
-    'by_value_and_not_none',
     'cmp_to_target',
     'dominates',
     'find_dimension_maxmin_set',

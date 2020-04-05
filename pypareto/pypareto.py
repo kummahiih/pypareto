@@ -21,13 +21,14 @@ class MaxMin(Enum):
         return self.name
 
 class MaxMinList:
-    def __init__(self, *target_list: List[MaxMin]):
+    def __init__(self, *target_list: List[MaxMin], none_is_good=False):
         """
         >>> MaxMinList(MaxMin.MAX, MaxMin.MIN)
         MaxMinList[MAX ,MIN]
         """
         self._target_list = target_list
         self._dim = len(target_list)
+        self._none_is_good = none_is_good
 
     def __repr__(self) -> str:
         return "MaxMinList[{}]".format(" ,".join([i.__repr__() for i in self._target_list]))
@@ -38,6 +39,10 @@ class MaxMinList:
     @property
     def list(self) -> List[MaxMin]:
         return self._target_list
+    
+    @property
+    def none_is_good(self):
+        return self._none_is_good
 
 class Domination(Enum):
     GREATER = 1
@@ -83,56 +88,43 @@ def by_value(a, b) -> Domination:
         return Domination.LESS
     return  Domination.EQUAL
 
-def by_value_and_not_none(a, b) -> Domination:
+def cmp_to_target(a, b, cmp, target: MaxMin, none_is_good) -> Domination:
     """
-    >>> by_value_and_not_none(2, 1)
+    >>> cmp_to_target(2, 1, by_value, MaxMin.MAX, False)
     GREATER
-    >>> by_value_and_not_none(1, 2)
+    >>> cmp_to_target(1, 2, by_value, MaxMin.MAX, False)
     LESS
-    >>> by_value_and_not_none(2, 2)
+    >>> cmp_to_target(2, 2, by_value, MaxMin.MAX, False)
     EQUAL
-    >>> by_value_and_not_none(1, 1)
+    >>> cmp_to_target(1, 1, by_value, MaxMin.MAX, False)
     EQUAL
-    >>> by_value_and_not_none(2, None)
+    >>> cmp_to_target(2, 1, by_value, MaxMin.MIN, False)
+    LESS
+    >>> cmp_to_target(1, 2, by_value, MaxMin.MIN, False)
     GREATER
-    >>> by_value_and_not_none(None, 2)
-    LESS
-    >>> by_value_and_not_none(None, None)
+    >>> cmp_to_target(2, 2, by_value, MaxMin.MIN, False)
     EQUAL
-    """
-    if a is not None and b is None:
-        return Domination.GREATER
-    if a is None and b is not None:
-        return Domination.LESS
-    if a is None and b is None:
-        return Domination.EQUAL
-    if a > b:
-        return Domination.GREATER
-    if a < b:
-        return Domination.LESS
-    return  Domination.EQUAL
+    >>> cmp_to_target(1, 2, by_value, MaxMin.SKIP, False)
+    EQUAL
+    >>> cmp_to_target(None, 1, by_value, MaxMin.MIN, False)
+    LESS
+    >>> cmp_to_target(1, None, by_value, MaxMin.MIN, False)
+    GREATER
+    >>> cmp_to_target(None, None, by_value, MaxMin.MIN, False)
+    EQUAL
 
-def cmp_to_target(a, b, cmp, target: MaxMin) -> Domination:
-    """
-    >>> cmp_to_target(2, 1, by_value, MaxMin.MAX)
-    GREATER
-    >>> cmp_to_target(1, 2, by_value, MaxMin.MAX)
-    LESS
-    >>> cmp_to_target(2, 2, by_value, MaxMin.MAX)
-    EQUAL
-    >>> cmp_to_target(1, 1, by_value, MaxMin.MAX)
-    EQUAL
-    >>> cmp_to_target(2, 1, by_value, MaxMin.MIN)
-    LESS
-    >>> cmp_to_target(1, 2, by_value, MaxMin.MIN)
-    GREATER
-    >>> cmp_to_target(2, 2, by_value, MaxMin.MIN)
-    EQUAL
-    >>> cmp_to_target(1, 2, by_value, MaxMin.SKIP)
-    EQUAL
+
     """
     if target is MaxMin.SKIP:
         return Domination.EQUAL
+    
+    if a is not None and b is None:
+        return Domination.GREATER if not none_is_good else Domination.LESS
+    if a is None and b is not None:
+        return Domination.LESS if not none_is_good else Domination.GREATER
+    if a is None and b is None:
+        return Domination.EQUAL
+
     cmp_result = cmp(a ,b)
     if target is MaxMin.MAX:
         return cmp_result
@@ -187,7 +179,7 @@ def dominates(a: list, b: list, cmp, targets: MaxMinList) -> Domination:
     """
     results = list()
     for d in range(targets.dim):
-        results.append(cmp_to_target(a[d], b[d], cmp, targets.list[d]))
+        results.append(cmp_to_target(a[d], b[d], cmp, targets.list[d], targets.none_is_good))
     
     is_greater_in_any = False
     for r in results:
@@ -234,7 +226,7 @@ def find_dimension_maxmin_set(values, cmp, targets: MaxMinList):
         
         max_set = [values[0]]
         for value in values:
-            cmp_result = cmp_to_target(max_set[0][d], value[d], cmp, targets.list[d])
+            cmp_result = cmp_to_target(max_set[0][d], value[d], cmp, targets.list[d], targets.none_is_good)
             if cmp_result is Domination.GREATER:
                 continue
             elif cmp_result is Domination.EQUAL:
@@ -321,7 +313,7 @@ def split_by_pareto(values, dominates):
 
     >>> values = [(0, 1, 1), (1, 0, 0), (0, 0, 1), (None, 1, 1), (0, 1, 0), (None, 0, 1)]
     >>> targets = MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)
-    >>> dominates = Comparison(by_value_and_not_none, targets).compare
+    >>> dominates = Comparison(by_value, targets).compare
     >>> split_by_pareto(values, dominates)
     [[(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (None, 1, 1), (0, 0, 1)], [(None, 0, 1)]]
 
@@ -396,7 +388,7 @@ class ComparisonChain(Cmp):
         Before doing the N^2 pareto splits, split the values to preliminary groups by using thi function.
 
         >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
-        >>> chain = Comparison(by_value_and_not_none, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)).as_chain()
+        >>> chain = Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)).as_chain()
         >>> chain.split_by_dimensions(values)
         [[(2, 2, 2)], [(0, 1, 1), (1, 0, 0), (0, 0, 1), (None, 1, 1), (0, 1, 0), (None, 0, 1)], [(0, 0, 0), (0, None, None)]]
         """
@@ -411,22 +403,23 @@ class ComparisonChain(Cmp):
         return splitted
     
     def split_by_pareto(self, values):
-        """
-        ComparisonChain.split_by_pareto performs the pareto front split fronts
+        """ComparisonChain.split_by_pareto performs the pareto front split fronts
 
-        Here the None means just inferior value
-        >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
-        >>> chain = Comparison(by_value_and_not_none, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)).as_chain()
-        >>> chain.split_by_pareto(values)
-        [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (None, 1, 1), (0, 0, 1)], [(None, 0, 1)], [(0, 0, 0)], [(0, None, None)]]
+Here the None means just inferior value:
 
-        Here one extra None means that the whole row is inferior:
-        >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
-        >>> chain =  Comparison(by_none, MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).and_then(
-        ...    Comparison(by_value_and_not_none, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)))
-        >>> chain.split_by_pareto(values)
-        [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (0, 0, 1)], [(None, 1, 1)], [(None, 0, 1)], [(0, 0, 0)], [(0, None, None)]]
-        """
+    >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
+    >>> chain = Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)).as_chain()
+    >>> chain.split_by_pareto(values)
+    [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (None, 1, 1), (0, 0, 1)], [(None, 0, 1)], [(0, 0, 0)], [(0, None, None)]]
+
+Here one extra None means that the whole row is inferior:
+
+    >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
+    >>> chain =  Comparison(by_none, MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).and_then(
+    ...    Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)))
+    >>> chain.split_by_pareto(values)
+    [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (0, 0, 1)], [(None, 1, 1)], [(None, 0, 1)], [(0, 0, 0)], [(0, None, None)]]
+"""
         splitted = self.split_by_dimensions(values)
         new_splitted = []
         while len(splitted) > 0:
