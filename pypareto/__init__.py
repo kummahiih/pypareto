@@ -16,9 +16,9 @@ from .pypareto import (
     split_by_pareto)
 
 __doc__ = """
-= pypareto =
+# pypareto
 Pypareto is a Python library for pareto front seaching
-== Usage ==
+## Usage 
 """ + "\n".join( [l.lstrip(" ") for l in ComparisonChain.split_by_pareto.__doc__.split("\n")])
 
 __all__ = [
