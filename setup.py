@@ -24,7 +24,7 @@ setup(
     license="MIT",
     author="Pauli Rikula",
     url='https://github.com/kummahiih/pypareto',
-    packages=['category_equations'],
+    packages=['pypareto'],
     python_requires='~=3.6',
     classifiers=[
         'License :: OSI Approved :: MIT License',
