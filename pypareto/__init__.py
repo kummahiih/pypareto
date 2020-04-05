@@ -12,6 +12,7 @@ from .pypareto import (
     find_dimension_maxmin_set,
     get_dominating_set,
     split_by_dimensions,
+    GroupNones,
     split_by_pareto)
 
 __doc__ = """
