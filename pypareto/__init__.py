@@ -17,7 +17,7 @@ from .pypareto import (
 
 __doc__ = """
 # pypareto
-Pypareto is a Python library for pareto front seaching
+Pypareto is a Python library for pareto front seaching.
 ## Usage
 """ + ComparisonChain.split_by_pareto.__doc__
 

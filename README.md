@@ -1,8 +1,10 @@
 
 # pypareto
-Pypareto is a Python library for pareto front seaching
+Pypareto is a Python library for pareto front seaching.
 ## Usage
-ComparisonChain.split_by_pareto performs the pareto front split fronts
+ComparisonChain.split_by_pareto performs the pareto front split fronts.
+
+Currently this works only for unique rows. You can add id as the last row (and not sort by it) to work around this restriction.
 
 Here the None means just inferior value:
 

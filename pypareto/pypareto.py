@@ -325,6 +325,10 @@ def split_by_pareto(values, dominates):
     >>> split_by_pareto(values, dominates)
     [[(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (None, 1, 1), (0, 0, 1)], [(None, 0, 1)]]
 
+
+    >>> values = [(1, 1, 1), (1, 1, 1)]
+    
+
     """
     if values is None or len(values) == 0:
         return []
@@ -484,7 +488,9 @@ class ComparisonChain:
         return splitted
     
     def split_by_pareto(self, values):
-        """ComparisonChain.split_by_pareto performs the pareto front split fronts
+        """ComparisonChain.split_by_pareto performs the pareto front split fronts.
+
+Currently this works only for unique rows. You can add id as the last row (and not sort by it) to work around this restriction.
 
 Here the None means just inferior value:
 
