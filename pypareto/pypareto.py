@@ -11,7 +11,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 from typing import List
 from enum import Enum, auto
 import abc
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 class MaxMin(Enum):
     MAX = 1
@@ -52,6 +52,7 @@ class Domination(Enum):
     
     def __repr__(self) -> str:
         return self.name
+
 
 def by_none(a, b) -> Domination:
     """
@@ -181,6 +182,9 @@ def dominates(a: list, b: list, cmp, targets: MaxMinList) -> Domination:
     EQUAL
     >>> dominates([1, 0], [0, 1], by_value, target)
     EQUAL
+    >>> dominates((None, 0, 1), (0, 0, 0), by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX, none_is_good=False))
+    EQUAL
+    
 
     """
     results = list()
@@ -206,147 +210,70 @@ def dominates(a: list, b: list, cmp, targets: MaxMinList) -> Domination:
     return Domination.EQUAL
 
 
-def find_dimension_maxmin_set(values, cmp, targets: MaxMinList):
+class DominanceMatrix:
     """
-    Pareto front can be made by doing first the splitting by just 
-    getting the best of each dimenstion to a separate group. This group might still
-    contain some sub pareto sets.
+    Dominance matrix used in the fast non dominated search from:
 
-    >>> values = [(0,0,1), (0,1,0), (1,0,0), (0,0,0)]
-    >>> cmp = by_value
+    Verma G., Kumar A., Mishra K.K. (2011) A Novel Non-dominated Sorting Algorithm. 
+    In: Panigrahi B.K., Suganthan P.N., Das S., Satapathy S.C. (eds) Swarm, Evolutionary, and Memetic Computing. 
+    SEMCCO 2011. Lecture Notes in Computer Science, vol 7076. Springer, Berlin, Heidelberg
+    
+
     >>> targets = MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)
-    >>> find_dimension_maxmin_set(values, cmp, targets)
-    [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
-    >>> values = [(0,0,1), (0,1,0), (1,0,0), (1,1,1)]
-    >>> find_dimension_maxmin_set(values, cmp, targets)
-    [(1, 0, 0), (1, 1, 1), (0, 0, 1), (0, 1, 0)]
-    """
-    dimension_maxmin_set = set([])
-    if values is None or len(values) == 0:
-        return []
-    
-    for d in range(targets.dim):
-        target = targets.list[d]
-        if target is MaxMin.SKIP:
-            continue
-        
-        max_set = [values[0]]
-        for value in values:
-            cmp_result = cmp_to_target(max_set[0][d], value[d], cmp, targets.list[d], targets.none_is_good)
-            if cmp_result is Domination.GREATER:
-                continue
-            elif cmp_result is Domination.EQUAL:
-                max_set.append(value)
-            else:
-                max_set = [value]
-        dimension_maxmin_set = dimension_maxmin_set.union(max_set)
-    
-    return list(dimension_maxmin_set)
-
-def split_by_dimensions(values, cmp, targets: MaxMinList):
-    """
-    Pareto fronts can be made by doing first the splitting by just 
-    getting the best of each dimenstion to a separate group. 
-    This groups might still contain some sub pareto groups in them.
+    >>> dominates = Comparison(by_value, targets).compare
     >>> values = [(2,2,2), (0,1,1), (0,0,1), (0,1,0), (1,0,0), (0,0,0)]
-    >>> cmp = by_value
-    >>> targets = MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)
-    >>> split_by_dimensions(values, cmp, targets)
-    [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1), (0, 1, 0), (0, 0, 1)], [(0, 0, 0)]]
-
-
-    """
-    if values is None or len(values) == 0:
-        return []
-    if len(values) == 1:
-        return [values]
-    
-    splitted = []
-    while True:
-        top_group = find_dimension_maxmin_set(values, cmp, targets)
-        if len(top_group) > 0:
-            splitted.append(top_group)
-            for v in top_group:
-                values.remove(v)
-            continue
-        if len(values) > 0:
-            splitted.append(values)
-        break
-    return splitted
-
-
-def get_dominating_set(values, dominates):
-    """
-    >>> cmp = by_value
-    >>> targets = MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)
-    >>> dominates = Comparison(cmp, targets).compare
-    >>> get_dominating_set([(2,2,2), (0,1,1), (0,0,1), (0,1,0), (1,0,0), (0,0,0)], dominates)
+    >>> for front in DominanceMatrix(values, dominates).get_pareto_fronts():
+    ...   print(front)
     [(2, 2, 2)]
-    >>> get_dominating_set([(0,1,1), (0,0,1), (0,1,0), (1,0,0), (0,0,0)], dominates)
-    [(1, 0, 0), (0, 1, 1)]
-    >>> get_dominating_set([(0,0,1), (0,1,0), (0,0,0)], dominates)
-    [(0, 1, 0), (0, 0, 1)]
-    >>> get_dominating_set([(0,0,0)], dominates)
+    [(0, 1, 1), (1, 0, 0)]
+    [(0, 0, 1), (0, 1, 0)]
     [(0, 0, 0)]
+    
+    
+    >>> values = [(1,0,0), (None,1,1), (None,0,1), (0,0,0)]
+    >>> for front in DominanceMatrix(values, dominates).get_pareto_fronts():
+    ...   print(front)
+    [(1, 0, 0), (None, 1, 1)]
+    [(None, 0, 1), (0, 0, 0)]
 
     """
-    if values is None or len(values) == 0:
-        return []
-    
-    max_set = [values[0]]
-    for value in values:
-        cmp_result = dominates(max_set[0], value)
-        if cmp_result is Domination.GREATER:
-            continue
-        elif cmp_result is Domination.EQUAL:
-            max_set.append(value)
-        else:
-            max_set = [value]
-    
-    return list(set(max_set))
+    def __init__(self, values, dominates):
+        dimension = len(values)
+        self.is_dominating = defaultdict(list)
+        self.dominated_by_counter = defaultdict(int)
+        self.values = list(values)
 
+        for i in range(dimension):
+            for j in range(i + 1, dimension):
+                a = values[i]
+                b = values[j]
+                rel = dominates(a, b)
+                if rel == Domination.GREATER:
+                    self.is_dominating[a].append(b)
+                    self.dominated_by_counter[b] += 1
+                elif rel == Domination.LESS:
+                    self.is_dominating[b].append(a)
+                    self.dominated_by_counter[a] += 1
 
-def split_by_pareto(values, dominates):
-    """
-    Pareto fronts can be made by doing first the splitting by just 
-    getting the best of each dimenstion to a separate group. 
-    This groups might still contain some sub pareto groups in them.
+    def get_pareto_fronts(self):
+        while self.values:
+            current_front = [ v for v in self.values if self.dominated_by_counter[v] == 0]
+            yield current_front
 
+            for v in current_front:
+                for dominated in self.is_dominating[v]:
+                    self.dominated_by_counter[dominated] -= 1
 
-    >>> values = [(2,2,2), (0,1,1), (0,0,1), (0,1,0), (1,0,0), (0,0,0)]
-    >>> targets = MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)
-    >>> dominates = Comparison(by_value, targets).compare
-    >>> split_by_pareto(values, dominates)
-    [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (0, 0, 1)], [(0, 0, 0)]]
+                self.values.remove(v)
+                try:
+                    del self.is_dominating[v]
+                except KeyError:
+                    pass
+                try:
+                    del self.dominated_by_counter[v]
+                except KeyError:
+                    pass
 
-    >>> values = [(0, 1, 1), (1, 0, 0), (0, 0, 1), (None, 1, 1), (0, 1, 0), (None, 0, 1)]
-    >>> targets = MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)
-    >>> dominates = Comparison(by_value, targets).compare
-    >>> split_by_pareto(values, dominates)
-    [[(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (None, 1, 1), (0, 0, 1)], [(None, 0, 1)]]
-
-
-    >>> values = [(1, 1, 1), (1, 1, 1)]
-    
-
-    """
-    if values is None or len(values) == 0:
-        return []
-    if len(values) == 1:
-        return [values]
-
-    splitted = []
-    while True:
-        top_group = get_dominating_set(values, dominates)
-        if len(top_group) > 0:
-            splitted.append(top_group)
-            for v in top_group:
-                values.remove(v)
-            continue
-        if len(values) > 0:
-            splitted.append(values)
-        break
-    return splitted
 
 class Cmp(metaclass=abc.ABCMeta):
     @abc.abstractclassmethod
@@ -447,28 +374,35 @@ class ComparisonChain:
     def and_then(self, c: Cmp) -> Cmp:
         return ComparisonChain(self, *self.chain, c)
 
-    def pre_split(self, values):
-        """
-        Before doing the N^2 pareto splits, split the values to preliminary groups by using thi function.
+    
+    def split_by_pareto(self, values):
+        """ComparisonChain.split_by_pareto performs the pareto front split fronts.
 
-        >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
-        >>> chain = Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)).as_chain()
-        >>> chain.pre_split(values)
-        [[(2, 2, 2)], [(0, 1, 1), (1, 0, 0), (0, 0, 1), (None, 1, 1), (0, 1, 0), (None, 0, 1)], [(0, 0, 0), (0, None, None)]]
+Currently this works only for unique rows. You can add id as the last row (and not sort by it) to work around this restriction.
 
-        >>> chain = GroupNones(MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).as_chain()
-        >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
-        >>> chain.pre_split(values)
-        [[(2, 2, 2), (0, 1, 1), (0, 0, 1), (0, 1, 0), (1, 0, 0), (0, 0, 0)], [(None, 0, 1), (None, 1, 1)], [(0, None, None)]]
+Here the None means just inferior value:
 
-        """
+    >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
+    >>> chain = Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)).as_chain()
+    >>> chain.split_by_pareto(values)
+    [[(2, 2, 2)], [(0, 1, 1), (1, 0, 0)], [(0, 0, 1), (0, 1, 0), (None, 1, 1)], [(None, 0, 1), (0, 0, 0)], [(0, None, None)]]
+
+Here one extra None means that the whole row is inferior:
+
+    >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0), (None, 0, None)]
+    >>> chain = GroupNones(MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).and_then(
+    ...    Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)))
+    >>> chain.split_by_pareto(values)
+    [[(2, 2, 2)], [(0, 1, 1), (1, 0, 0)], [(0, 0, 1), (0, 1, 0)], [(0, 0, 0)], [(None, 1, 1)], [(None, 0, 1)], [(0, None, None), (None, 0, None)]]
+
+"""
         splitted = [values]
         for comparison in self.chain:
             if comparison.is_pareto():
                 new_splitted = []
                 while len(splitted) > 0:
                     group = splitted.pop(0)
-                    new_groups = split_by_dimensions(group, comparison.cmp, comparison.targets)
+                    new_groups = list(DominanceMatrix(group, comparison.compare).get_pareto_fronts())
                     new_splitted.extend(new_groups)
                 splitted = new_splitted
             elif comparison.is_group():
@@ -486,38 +420,6 @@ class ComparisonChain:
                     new_splitted.extend(new_groups)
                 splitted = new_splitted
         return splitted
-    
-    def split_by_pareto(self, values):
-        """ComparisonChain.split_by_pareto performs the pareto front split fronts.
-
-Currently this works only for unique rows. You can add id as the last row (and not sort by it) to work around this restriction.
-
-Here the None means just inferior value:
-
-    >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0)]
-    >>> chain = Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)).as_chain()
-    >>> chain.split_by_pareto(values)
-    [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1)], [(0, 1, 0), (None, 1, 1), (0, 0, 1)], [(None, 0, 1)], [(0, 0, 0)], [(0, None, None)]]
-
-Here one extra None means that the whole row is inferior:
-
-    >>> values = [(0,None,None), (2,2,2), (0,1,1), (0,0,1), (None,0,1), (0,1,0), (None,1,1), (1,0,0), (0,0,0), (None, 0, None)]
-    >>> chain = GroupNones(MaxMinList(MaxMin.MIN, MaxMin.MIN, MaxMin.MIN)).and_then(
-    ...    Comparison(by_value, MaxMinList(MaxMin.MAX, MaxMin.MAX, MaxMin.MAX)))
-    >>> chain.split_by_pareto(values)
-    [[(2, 2, 2)], [(1, 0, 0), (0, 1, 1), (0, 1, 0), (0, 0, 1)], [(0, 0, 0)], [(None, 1, 1)], [(None, 0, 1)], [(None, 0, None), (0, None, None)]]
-"""
-        splitted = self.pre_split(values)
-        new_splitted = []
-        while len(splitted) > 0:
-            group = splitted.pop(0)
-            new_groups = split_by_pareto(group, self.compare)
-            new_splitted.extend(new_groups)
-        splitted = new_splitted
-        return splitted
-
-
-
 
 if __name__ == "__main__":
     import doctest

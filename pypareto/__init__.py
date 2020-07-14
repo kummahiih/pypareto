@@ -9,11 +9,7 @@ from .pypareto import (
     by_value,
     cmp_to_target,
     dominates,
-    find_dimension_maxmin_set,
-    get_dominating_set,
-    split_by_dimensions,
-    GroupNones,
-    split_by_pareto)
+    GroupNones)
 
 __doc__ = """
 # pypareto
@@ -33,7 +29,4 @@ __all__ = [
     'by_value',
     'cmp_to_target',
     'dominates',
-    'find_dimension_maxmin_set',
-    'get_dominating_set',
-    'split_by_dimensions',
-    'split_by_pareto']
+    'DominanceMatrix']
