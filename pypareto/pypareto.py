@@ -258,6 +258,9 @@ class DominanceMatrix:
     def get_pareto_fronts(self):
         while self.values:
             current_front = [ v for v in self.values if self.dominated_by_counter[v] == 0]
+            if len(current_front) == 0:
+                yield list(self.values)
+                return
             yield current_front
 
             for v in current_front:

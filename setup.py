@@ -18,7 +18,7 @@ with open('README.md', 'wt') as readme_file:
 
 setup(
     name='pypareto',
-    version='0.3.0',
+    version='0.3.1',
     description='Python library for pareto front extraction',
     long_description=README,
     license="MIT",
